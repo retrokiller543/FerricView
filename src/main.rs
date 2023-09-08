@@ -230,6 +230,7 @@ mod files {
 fn main() {
     let opt = Opt::parse();
 
+    #[cfg(debug_assertions)]
     dbg!(opt.clone());
 
     let tree: files::Objects;
