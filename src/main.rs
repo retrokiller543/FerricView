@@ -14,6 +14,7 @@ struct Opt {
 }
 
 mod files {
+    use rayon::prelude::*;
     use std::fs;
     use std::os::unix::fs::MetadataExt;
     use std::path::Path;
@@ -53,17 +54,19 @@ mod files {
         }
 
         fn get_items_recursive(path: &Path) -> FileTree {
-            let mut children = Vec::new();
+            let entries: Vec<_> = fs::read_dir(path)
+                .expect("Failed to read directory")
+                .map(|entry| entry.expect("Failed to read entry"))
+                .collect();
 
-            for entry in fs::read_dir(path).expect("Failed to read directory") {
-                let entry = entry.expect("Failed to read entry");
-                let path = entry.path();
-
-                if let Ok(metadata) = entry.metadata() {
+            let children: Vec<_> = entries
+                .par_iter() // Using rayon's par_iter for parallel processing
+                .filter_map(|entry| {
+                    let path = entry.path();
                     if path.is_dir() {
-                        let subtree = Self::get_items_recursive(&path);
-                        children.push(subtree);
+                        Some(Self::get_items_recursive(&path))
                     } else if let Some(filename) = path.file_name() {
+                        let metadata = entry.metadata().expect("Failed to get metadata");
                         let file_info = FileInfo {
                             path: path.to_str().unwrap().to_string(),
                             file_name: filename.to_str().unwrap().to_string(),
@@ -74,12 +77,12 @@ mod files {
                             _owner: metadata.uid(),
                             _group: metadata.gid(),
                         };
-                        children.push(FileTree::File(file_info));
+                        Some(FileTree::File(file_info))
                     } else {
-                        panic!("Failed to get filename");
+                        None
                     }
-                }
-            }
+                })
+                .collect();
 
             FileTree::Directory {
                 name: path.file_name().unwrap().to_str().unwrap().to_string(),
